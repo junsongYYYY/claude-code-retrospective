@@ -1,4 +1,4 @@
-# Project Rules
+﻿# Project Rules
 
 <!-- retro:begin -->
 ## Agent Retrospective 自进化复盘
@@ -11,6 +11,6 @@
 ### 与 Auto Memory 的分工
 
 当用户说"记住"时判断内容类型：
-- 项目信息/用户偏好 → 仅 Auto Memory
-- 排障经验/避坑指南 → Retro 写入结构化版本（含"下次优先/避免路径"），Auto Memory 写入背景说明版，不写相同内容。
+- 项目信息/用户偏好 -> 仅 Auto Memory
+- 排障经验/避坑指南 -> Retro 写入结构化版本（含"下次优先/避免路径"），Auto Memory 写入背景说明版，不写相同内容。
 <!-- retro:end -->

@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$ProjectRoot = (Get-Location).Path,
     [switch]$CheckOnly
@@ -8,6 +8,7 @@ $ErrorActionPreference = "Stop"
 
 $beginMarker = "<!-- retro:begin -->"
 $endMarker = "<!-- retro:end -->"
+$globalClaudePath = Join-Path $env:USERPROFILE ".claude\CLAUDE.md"
 
 $created = New-Object System.Collections.Generic.List[string]
 $updated = New-Object System.Collections.Generic.List[string]
@@ -24,7 +25,6 @@ function Add-ItemStatus {
 
 function Read-Utf8Text {
     param([string]$Path)
-
     $utf8Strict = [System.Text.UTF8Encoding]::new($false, $true)
     try {
         return [System.IO.File]::ReadAllText($Path, $utf8Strict)
@@ -39,29 +39,24 @@ function Write-Utf8BomText {
         [string]$Path,
         [string]$Text
     )
-
     $parent = Split-Path -Parent $Path
     if ($parent -and -not (Test-Path -LiteralPath $parent)) {
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
     }
-
     $utf8Bom = [System.Text.UTF8Encoding]::new($true)
     [System.IO.File]::WriteAllText($Path, $Text, $utf8Bom)
 }
 
 function Ensure-Directory {
     param([string]$Path)
-
     if (Test-Path -LiteralPath $Path) {
         Add-ItemStatus $skipped $Path
         return
     }
-
     if ($CheckOnly) {
         Add-ItemStatus $warnings "Missing directory: $Path"
         return
     }
-
     New-Item -ItemType Directory -Force -Path $Path | Out-Null
     Add-ItemStatus $created $Path
 }
@@ -71,17 +66,14 @@ function Ensure-File {
         [string]$Path,
         [string]$Content
     )
-
     if (Test-Path -LiteralPath $Path) {
         Add-ItemStatus $skipped $Path
         return
     }
-
     if ($CheckOnly) {
         Add-ItemStatus $warnings "Missing file: $Path"
         return
     }
-
     Write-Utf8BomText -Path $Path -Text $Content
     Add-ItemStatus $created $Path
 }
@@ -91,43 +83,37 @@ function Ensure-ControlledBlock {
         [string]$Path,
         [string]$Block
     )
-
     if (-not (Test-Path -LiteralPath $Path)) {
         if ($CheckOnly) {
             Add-ItemStatus $warnings "Missing file: $Path"
             return
         }
-
         Write-Utf8BomText -Path $Path -Text "# Project Rules`r`n`r`n$Block`r`n"
         Add-ItemStatus $created $Path
         return
     }
-
     $current = Read-Utf8Text -Path $Path
-    $pattern = "(?s)$([regex]::Escape($beginMarker)).*?$([regex]::Escape($endMarker))"
-
+    $escapedBegin = [regex]::Escape($beginMarker)
+    $escapedEnd = [regex]::Escape($endMarker)
+    $pattern = "(?s)$escapedBegin.*?$escapedEnd"
     if ($current -match $pattern) {
         $newContent = [regex]::Replace($current, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $Block })
         if ($newContent -eq $current) {
             Add-ItemStatus $skipped $Path
             return
         }
-
         if ($CheckOnly) {
             Add-ItemStatus $warnings "Controlled block differs: $Path"
             return
         }
-
         Write-Utf8BomText -Path $Path -Text $newContent
         Add-ItemStatus $updated $Path
         return
     }
-
     if ($CheckOnly) {
         Add-ItemStatus $warnings "Missing retro controlled block: $Path"
         return
     }
-
     $separator = if ($current.EndsWith("`n")) { "`r`n" } else { "`r`n`r`n" }
     Write-Utf8BomText -Path $Path -Text ($current + $separator + $Block + "`r`n")
     Add-ItemStatus $updated $Path
@@ -138,14 +124,12 @@ function Write-Section {
         [string]$Title,
         [System.Collections.Generic.List[string]]$Items
     )
-
     Write-Host ""
     Write-Host "[$Title]"
     if ($Items.Count -eq 0) {
         Write-Host "- none"
         return
     }
-
     foreach ($item in $Items) {
         Write-Host "- $item"
     }
@@ -175,7 +159,6 @@ if (-not (Test-Path -LiteralPath $globalSkillPath)) {
 }
 
 # --- Check global CLAUDE.md ---
-$globalClaudePath = Join-Path $env:USERPROFILE ".claude\CLAUDE.md"
 if (-not (Test-Path -LiteralPath $globalClaudePath)) {
     Add-ItemStatus $warnings "Global CLAUDE.md missing: $globalClaudePath"
 } else {
@@ -197,7 +180,6 @@ Ensure-Directory $retroDir
 Ensure-Directory $retrosDir
 
 # --- File templates ---
-
 $controlledBlock = Join-Lines @(
     '<!-- retro:begin -->',
     '## Agent Retrospective 自进化复盘',
@@ -210,8 +192,8 @@ $controlledBlock = Join-Lines @(
     '### 与 Auto Memory 的分工',
     '',
     '当用户说"记住"时判断内容类型：',
-    '- 项目信息/用户偏好 → 仅 Auto Memory',
-    '- 排障经验/避坑指南 → Retro 写入结构化版本（含"下次优先/避免路径"），Auto Memory 写入背景说明版，不写相同内容。',
+    '- 项目信息/用户偏好 -> 仅 Auto Memory',
+    '- 排障经验/避坑指南 -> Retro 写入结构化版本（含"下次优先/避免路径"），Auto Memory 写入背景说明版，不写相同内容。',
     '<!-- retro:end -->'
 )
 $controlledBlock = $controlledBlock.TrimEnd([char[]]"`r`n")
