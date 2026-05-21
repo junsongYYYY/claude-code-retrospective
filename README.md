@@ -28,8 +28,11 @@
 ├── README.md              # 本文件
 ├── scripts
 │   └── init_agent_retro.ps1   # 新项目一键接入脚本
+├── .claude/retro/         # session 状态文件（已加入 .gitignore）
+│   ├── session_state.json # 当前对话的信号采集与评分
+│   └── task_events.jsonl  # 工具调用事件日志
 └── docs
-    └── agent_memory
+    ── agent_memory
         ├── README.md
         ├── inbox.md
         ├── testing.md
@@ -79,20 +82,32 @@ docs/agent_memory/project-conventions.md
   -> 写入 AGENT_LESSONS.md 作为索引
 ```
 
-## Lesson Curator
+## Hook 机制（自动评分触发）
 
-`lesson-curator` 是定期人工清理 `inbox.md` 的技能。
+系统通过全局 hooks 实现**自动评分与复盘门控**，无需手动触发：
 
-使用场景：
+| Hook | 触发时机 | 脚本 | 作用 |
+|---|---|---|---|
+| `PostToolUse` | 每次 `Bash` / `Edit` / `Write` 工具调用后 | `score_retrospective.ps1` | 采集执行信号，累加评分，写入 `session_state.json` |
+| `Stop` | 对话结束时 | `retro_gate.ps1` | 读取评分，按阈值决定是否触发复盘 |
 
-- 用户说"整理 inbox"、"清理经验库候选"。
-- `inbox.md` 中候选太多，需要判断哪些应升级或删除。
+评分信号采集规则：
 
-判断结果：
+- **命令失败**：+3 分
+- **测试运行**：+2 分；先失败后成功：额外 +4 分
+- **依赖变更**（install 命令或依赖文件修改）：+3 分
+- **配置文件修改**（JSON/YAML/.env/CLAUDE.md 等）：+2+1 分
+- **普通文件编辑/写入**：+2 分
+- **修改超过 5 个文件**：额外 +2 分
+- **工具调用超过 8 次且有问题**：额外 +2 分
 
-- `Promote`：候选已确认有价值，移动到分类文件。
-- `Delete`：候选是一次性、过时或无复用价值，删除。
-- `Keep`：证据不足，继续留在 `inbox.md`。
+复盘门控阈值：
+
+- **0-3 分**：不复盘
+- **4-6 分**：微日志（不打扰用户）
+- **7-10 分**：简短复盘
+- **11-14 分**：完整复盘
+- **15+ 分**：强制复盘
 
 ## 给新项目接入
 
@@ -112,38 +127,29 @@ powershell -NoProfile -ExecutionPolicy Bypass -File <project-root>\scripts\init_
 
 - `CLAUDE.md`（含 `retro` 受控区块）
 - `AGENT_LESSONS.md`
-- `docs/agent_memory/README.md`
-- `docs/agent_memory/inbox.md`
-- `docs/agent_memory/testing.md`
-- `docs/agent_memory/dependencies.md`
-- `docs/agent_memory/project-conventions.md`
-- `docs/agent_memory/mistakes-to-avoid.md`
-- `docs/agent_memory/archive/`
+- `docs/agent_memory/` 下的所有分类文件
 - `.claude/retro/` 目录及 session 状态文件
 
 已有文件不会被覆盖。已有 `CLAUDE.md` 只更新 `<!-- retro:begin -->` 到 `<!-- retro:end -->` 之间的受控区块。
 
+## Lesson Curator
+
+`lesson-curator` 是定期人工清理 `inbox.md` 的技能。
+
+使用场景：
+
+- 用户说"整理 inbox"、"清理经验库候选"。
+- `inbox.md` 中候选太多，需要判断哪些应升级或删除。
+
+判断结果：
+
+- `Promote`：候选已确认有价值，移动到分类文件。
+- `Delete`：候选是一次性、过时或无复用价值，删除。
+- `Keep`：证据不足，继续留在 `inbox.md`。
+
 ## 多线程工作方式
 
-多个任务并行时，各任务直接读取同一组稳定经验文件：
-
-```
-AGENT_LESSONS.md
-testing.md
-dependencies.md
-mistakes-to-avoid.md
-project-conventions.md
-```
-
-系统不生成共享的任务前快照文件，因此不会出现多个对话同时刷新同一个文件、互相覆盖的问题。
-
-## 测试系统
-
-运行回归测试：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-AgentRetro.ps1 -ProjectRoot .
-```
+多个任务并行时，各任务直接读取同一组稳定经验文件。系统不生成共享的任务前快照文件，因此不会出现多个对话同时刷新同一个文件、互相覆盖的问题。
 
 ## 维护原则
 
