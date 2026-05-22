@@ -10,4 +10,6 @@
 
 ## Active Lessons
 
-暂无。首批经验应来自真实任务复盘，而不是预设猜测。
+- **[触发: gitignore, runtime 文件]** 区分 runtime 文件（被 gitignore 排除，由脚本创建）和模板文件（需要版本控制）。创建文件前先检查 `.gitignore`。
+- **[触发: -CheckOnly, 先检查后修改]** 任何变更前先跑 `init_agent_retro.ps1 -CheckOnly`，以脚本输出为准，不要凭感觉创建文件。
+- **[触发: git commit, 遗漏文件]** `git add` 后用 `git status --short` 确认暂存区完整再 commit。
