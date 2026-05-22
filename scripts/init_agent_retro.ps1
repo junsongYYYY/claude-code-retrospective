@@ -152,10 +152,52 @@ if (Test-Path -LiteralPath $ProjectRoot) {
     Add-ItemStatus $warnings "Project root does not exist: $ProjectRoot"
 }
 
-# --- Check global skill ---
-$globalSkillPath = Join-Path $env:USERPROFILE ".claude\skills\agent-retrospective\SKILL.md"
-if (-not (Test-Path -LiteralPath $globalSkillPath)) {
-    Add-ItemStatus $warnings "Global skill missing: $globalSkillPath"
+# --- Resolve script repo root (where skills/ lives) ---
+$scriptDir = Split-Path -Parent $PSCommandPath
+$repoRoot = Split-Path -Parent $scriptDir
+$skillsSourceDir = Join-Path $repoRoot "skills"
+$globalSkillsDir = Join-Path $env:USERPROFILE ".claude\skills"
+
+# --- Install / update global skills ---
+$skillNames = @("agent-retrospective", "lesson-curator", "agent-retro-bootstrap")
+if (Test-Path -LiteralPath $skillsSourceDir) {
+    foreach ($skillName in $skillNames) {
+        $srcSkill = Join-Path $skillsSourceDir "$skillName\SKILL.md"
+        $dstSkill = Join-Path $globalSkillsDir "$skillName\SKILL.md"
+        if (Test-Path -LiteralPath $srcSkill) {
+            if (Test-Path -LiteralPath $dstSkill) {
+                $srcContent = Read-Utf8Text -Path $srcSkill
+                $dstContent = Read-Utf8Text -Path $dstSkill
+                if ($srcContent -eq $dstContent) {
+                    Add-ItemStatus $skipped $dstSkill
+                } else {
+                    if (-not $CheckOnly) {
+                        Write-Utf8BomText -Path $dstSkill -Text $srcContent
+                        Add-ItemStatus $updated $dstSkill
+                    } else {
+                        Add-ItemStatus $warnings "Skill differs: $dstSkill"
+                    }
+                }
+            } else {
+                if (-not $CheckOnly) {
+                    $dstDir = Join-Path $globalSkillsDir $skillName
+                    New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
+                    Write-Utf8BomText -Path $dstSkill -Text (Read-Utf8Text -Path $srcSkill)
+                    Add-ItemStatus $created $dstSkill
+                } else {
+                    Add-ItemStatus $warnings "Missing skill: $dstSkill"
+                }
+            }
+        }
+    }
+} else {
+    # Running from outside the repo — warn but continue
+    foreach ($skillName in $skillNames) {
+        $dstSkill = Join-Path $globalSkillsDir "$skillName\SKILL.md"
+        if (-not (Test-Path -LiteralPath $dstSkill)) {
+            Add-ItemStatus $warnings "Global skill missing and no skills/ source found: $dstSkill"
+        }
+    }
 }
 
 # --- Check global CLAUDE.md ---
