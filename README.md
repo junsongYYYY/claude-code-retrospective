@@ -30,7 +30,10 @@
 │   └── init_agent_retro.ps1   # 新项目一键接入脚本
 ├── .claude/retro/         # session 状态文件（已加入 .gitignore）
 │   ├── session_state.json # 当前对话的信号采集与评分
-│   └── task_events.jsonl  # 工具调用事件日志
+│   ├── task_events.jsonl  # 工具调用事件日志
+│   ├── retros/            # 复盘报告存档
+│   └── fitness/
+│       └── fitness_tracker.json  # 经验适应度追踪
 └── docs
     ── agent_memory
         ├── README.md
@@ -40,7 +43,32 @@
         ├── project-conventions.md
         ├── mistakes-to-avoid.md
         └── archive/
+            └── INDEX.md     # 归档索引
 ```
+
+## v2 新增能力（2026-05）
+
+### 经验适应度衰减
+
+每条经验有生命周期。`lesson-curator` 定期计算适应度：
+
+```
+fitness = use_count * 3 + recent_uses * 5 - days_idle * 0.5
+```
+
+| fitness 值 | 级别 | 操作 |
+|---|---|---|
+| > 5 | healthy | 保留 |
+| 0 ~ 5 | dormant | 标记休眠，用户确认是否归档 |
+| < 0 | expired | 自动移入 `archive/` |
+
+### 高频经验自动提升
+
+inbox 中的经验满足 `use_count >= 3` 且 `fitness > 10` 时，自动提升为分类经验，并可选追加引用到 `CLAUDE.md`。
+
+### Git Diff 语义分析
+
+复盘时不仅看工具调用信号，还会分析 `git diff` 的变更内容（意图匹配、变更集中度、删除/新增比、隐藏约束），写入复盘报告的独立区块。
 
 ## 日常使用
 
@@ -98,16 +126,15 @@ docs/agent_memory/project-conventions.md
 - **依赖变更**（install 命令或依赖文件修改）：+3 分
 - **配置文件修改**（JSON/YAML/.env/CLAUDE.md 等）：+2+1 分
 - **普通文件编辑/写入**：+2 分
-- **修改超过 5 个文件**：额外 +2 分
-- **工具调用超过 8 次且有问题**：额外 +2 分
+- **修改超过 3 个文件**：额外 +2 分
+- **工具调用超过 5 次且有问题**：额外 +2 分
 
 复盘门控阈值：
 
-- **0-3 分**：不复盘
-- **4-6 分**：微日志（不打扰用户）
-- **7-10 分**：简短复盘
-- **11-14 分**：完整复盘
-- **15+ 分**：强制复盘
+- **0-2 分**：不复盘
+- **3-5 分**：微日志（轻量提示，询问用户是否复盘）
+- **6-9 分**：简短复盘
+- **10+ 分**：完整复盘
 
 ## 给新项目接入
 
@@ -134,18 +161,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File <project-root>\scripts\init_
 
 ## Lesson Curator
 
-`lesson-curator` 是定期人工清理 `inbox.md` 的技能。
+`lesson-curator` 是定期人工清理 `inbox.md` 并执行经验衰减的技能。
 
 使用场景：
 
 - 用户说"整理 inbox"、"清理经验库候选"。
 - `inbox.md` 中候选太多，需要判断哪些应升级或删除。
+- 距离上次整理超过 7 天。
+- `fitness_tracker.json` 中存在休眠或过期经验。
 
 判断结果：
 
 - `Promote`：候选已确认有价值，移动到分类文件。
 - `Delete`：候选是一次性、过时或无复用价值，删除。
 - `Keep`：证据不足，继续留在 `inbox.md`。
+- `Dormant`：经验长期未被引用，标记休眠并等待确认。
+- `Archive`：经验已过期，自动移入 `archive/`。
 
 ## 多线程工作方式
 

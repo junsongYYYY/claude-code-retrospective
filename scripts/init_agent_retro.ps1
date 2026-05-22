@@ -173,11 +173,13 @@ $agentMemoryDir = Join-Path $resolvedProjectRoot "docs\agent_memory"
 $archiveDir = Join-Path $agentMemoryDir "archive"
 $retroDir = Join-Path $resolvedProjectRoot ".claude\retro"
 $retrosDir = Join-Path $retroDir "retros"
+$fitnessDir = Join-Path $retroDir "fitness"
 
 Ensure-Directory $agentMemoryDir
 Ensure-Directory $archiveDir
 Ensure-Directory $retroDir
 Ensure-Directory $retrosDir
+Ensure-Directory $fitnessDir
 
 # --- File templates ---
 $controlledBlock = Join-Lines @(
@@ -193,7 +195,9 @@ $controlledBlock = Join-Lines @(
     '  - 测试先失败后通过',
     '  → 满足任一条件时，在最终报告**之后**主动调用 `agent-retrospective` Skill 做复盘，不要等用户提醒',
     '  → **如果全程一次通过、没有任何反复，则跳过复盘**',
+    '- 复盘时执行 git diff 语义分析（`git diff --stat` + `git diff --unified=3`），分析意图匹配、变更集中度、删除/新增比、隐藏约束，写入复盘报告独立区块。',
     '- 项目经验可自动写入 `docs/agent_memory/inbox.md` 或分类文件；正式分类文件的 bullet 必须以 `[触发: ...]` 开头，候选复盘必须填写 `触发关键词`；只有稳定、高频、可复用的经验才进入 `AGENT_LESSONS.md`。',
+    '- 写入经验时同步更新 `.claude/retro/fitness/fitness_tracker.json`：记录 use_count、last_used_at、fitness 评分。',
     '- 不记录 API Key、token、cookie、完整 `.env` 或完整 stdout/stderr。',
     '',
     '### 与 Auto Memory 的分工',
@@ -330,6 +334,35 @@ $sessionStateContent = '{"turn_id":"","task_started_at":"","dirty":false,"files_
 
 $taskEventsContent = ''
 
+$fitnessTrackerContent = Join-Lines @(
+    '{',
+    '  "_schema": {',
+    '    "description": "经验适应度追踪器。由 lesson-curator 定期读取并执行衰减/归档操作。",',
+    '    "fitness_score公式": "fitness = use_count * 3 + recent_uses * 5 - days_idle * 0.5",',
+    '    "阈值": {',
+    '      "healthy": "> 5，经验有效保留",',
+    '      "dormant": "0 ~ 5，经验标记为休眠，lesson-curator 提示用户确认是否归档",',
+    '      "expired": "< 0，经验自动移入 archive/"',
+    '    },',
+    '    "promotion_rule": "use_count >= 3 且 fitness > 10 时，自动从 inbox 提升为分类经验"',
+    '  },',
+    '  "experiences": [],',
+    '  "last_curated": null',
+    '}'
+)
+
+$archiveIndexContent = Join-Lines @(
+    '# 经验归档索引',
+    '',
+    '本目录存放已过期或不再适用的经验。每条归档经验保留原始内容和归档原因，供后续参考。',
+    '',
+    '## 归档记录',
+    '',
+    '| 经验 ID | 原标题 | 归档日期 | 归档原因 |',
+    '|---|---|---|---|',
+    '| *(由 lesson-curator 自动维护)* | | | |'
+)
+
 # --- Ensure files ---
 Ensure-ControlledBlock -Path (Join-Path $resolvedProjectRoot "CLAUDE.md") -Block $controlledBlock
 Ensure-File -Path (Join-Path $resolvedProjectRoot "AGENT_LESSONS.md") -Content $agentLessons
@@ -339,6 +372,17 @@ Ensure-File -Path (Join-Path $agentMemoryDir "testing.md") -Content $testing
 Ensure-File -Path (Join-Path $agentMemoryDir "dependencies.md") -Content $dependencies
 Ensure-File -Path (Join-Path $agentMemoryDir "project-conventions.md") -Content $projectConventions
 Ensure-File -Path (Join-Path $agentMemoryDir "mistakes-to-avoid.md") -Content $mistakesToAvoid
+
+if (-not (Test-Path (Join-Path $archiveDir "INDEX.md"))) {
+    if (-not $CheckOnly) {
+        Write-Utf8BomText -Path (Join-Path $archiveDir "INDEX.md") -Text $archiveIndexContent
+        Add-ItemStatus $created (Join-Path $archiveDir "INDEX.md")
+    } else {
+        Add-ItemStatus $warnings "Missing archive/INDEX.md"
+    }
+} else {
+    Add-ItemStatus $skipped (Join-Path $archiveDir "INDEX.md")
+}
 
 if (-not (Test-Path (Join-Path $retroDir "session_state.json"))) {
     if (-not $CheckOnly) {
@@ -360,6 +404,17 @@ if (-not (Test-Path (Join-Path $retroDir "task_events.jsonl"))) {
     }
 } else {
     Add-ItemStatus $skipped (Join-Path $retroDir "task_events.jsonl")
+}
+
+if (-not (Test-Path (Join-Path $fitnessDir "fitness_tracker.json"))) {
+    if (-not $CheckOnly) {
+        Set-Content -LiteralPath (Join-Path $fitnessDir "fitness_tracker.json") -Value $fitnessTrackerContent -Encoding utf8
+        Add-ItemStatus $created (Join-Path $fitnessDir "fitness_tracker.json")
+    } else {
+        Add-ItemStatus $warnings "Missing fitness/fitness_tracker.json"
+    }
+} else {
+    Add-ItemStatus $skipped (Join-Path $fitnessDir "fitness_tracker.json")
 }
 
 # --- Summary ---
